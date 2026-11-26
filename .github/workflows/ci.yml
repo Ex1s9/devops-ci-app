@@ -81,8 +81,8 @@ jobs:
         run: |
           set -euo pipefail
           cleanup() {
-            docker logs smoke  true
-            docker rm -f smoke >/dev/null 2>&1  true
+            docker logs smoke || true
+            docker rm -f smoke >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
           docker run -d --name smoke -p 127.0.0.1:5000:5000 "devops-ci-app:${GITHUB_SHA}"
