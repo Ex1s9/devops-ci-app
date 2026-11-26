@@ -64,9 +64,9 @@ jobs:
   image:
     needs: test
     runs-on: ubuntu-latest
-    # ИНЦИДЕНТ 1: для push в GHCR права пока недостаточно.
     permissions:
       contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -102,7 +102,7 @@ jobs:
           python3 -m json.tool health.json
           python3 <<'PY'
           import json
-          from pathlib import Path
+          from pathlibPath
           payload = json.loads(Path("health.json").read_text(encoding="utf-8"))
           assert payload == {"status": "ok"}, f"unexpected /health payload: {payload}"
           PY
