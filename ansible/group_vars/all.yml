@@ -1,0 +1,5 @@
+app_image: "ghcr.io/ex1s9/devops-ci-app"
+app_tag: "1c504d8e39bf3907199ca55c7fb9bbc2696f21fa"
+app_container_name: "devops-ci-app"
+app_host_port: 5000
+app_internal_port: 5000

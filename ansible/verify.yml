@@ -1,0 +1,98 @@
+- name: Verify configured devops VM state
+  hosts: vm
+  become: true
+  tasks:
+    - name: Gather service facts
+      ansible.builtin.service_facts:
+
+    - name: Assert Docker and Nginx services are running and enabled
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services[item].state == "running"
+          - ansible_facts.services[item].status == "enabled"
+        fail_msg: "Сервис {{ item }} не запущен или не включён в автозагрузку"
+      loop:
+        - docker.service
+        - nginx.service
+
+    - name: Check SSH unit enablement (service or socket)
+      ansible.builtin.command: systemctl is-enabled ssh.service ssh.socket
+      register: ssh_unit_enabled
+      changed_when: false
+      failed_when: false
+
+    - name: Assert SSH service is running and enabled
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['ssh.service'].state == "running"
+          - "'enabled' in ssh_unit_enabled.stdout_lines"
+        fail_msg: "SSH не запущен или не включён в автозагрузку"
+
+    - name: Inspect effective SSH daemon configuration
+      ansible.builtin.command: sshd -T
+      register: sshd_effective_config
+      changed_when: false
+
+    - name: Assert SSH password login and root login are disabled
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication no' in sshd_effective_config.stdout_lines"
+          - "'permitrootlogin no' in sshd_effective_config.stdout_lines"
+          - "'pubkeyauthentication yes' in sshd_effective_config.stdout_lines"
+        fail_msg: "Параметры усиления SSH не применены в sshd -T"
+
+    - name: Check UFW firewall status
+      ansible.builtin.command: ufw status
+      register: ufw_status_out
+      changed_when: false
+
+    - name: Assert UFW is active and allows ports 22 and 80
+      ansible.builtin.assert:
+        that:
+          - "'Status: active' in ufw_status_out.stdout"
+          - "'22/tcp' in ufw_status_out.stdout"
+          - "'80/tcp' in ufw_status_out.stdout"
+        fail_msg: "UFW не активен или не открыты порты 22/tcp и 80/tcp"
+
+    - name: Inspect application container state
+      community.docker.docker_container_info:
+        name: "{{ app_container_name }}"
+      register: app_container_info
+
+    - name: Assert application container is running with expected image
+      ansible.builtin.assert:
+        that:
+          - app_container_info.exists
+          - app_container_info.container.State.Running
+          - app_container_info.container.Config.Image == (app_image + ':' + app_tag)
+        fail_msg: "Контейнер {{ app_container_name }} не запущен с образом {{ app_image }}:{{ app_tag }}"
+
+    - name: Verify Nginx reverse proxy /health endpoint on VM
+      ansible.builtin.uri:
+        url: "http://127.0.0.1/health"
+        return_content: true
+      register: vm_nginx_health
+      failed_when: >
+        vm_nginx_health.status != 200 or
+        (vm_nginx_health.json | default({})).get("status") != "ok"
+
+    - name: Verify Nginx reverse proxy / endpoint on VM
+      ansible.builtin.uri:
+        url: "http://127.0.0.1/"
+        return_content: true
+      register: vm_nginx_root
+      failed_when: >
+        vm_nginx_root.status != 200 or
+        (vm_nginx_root.json | default({})).get("service") != "devops-ci-app" or
+        (vm_nginx_root.json | default({})).get("status") != "running"
+
+    - name: Verify external HTTP /health endpoint from control node
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/health"
+        return_content: true
+      delegate_to: localhost
+      become: false
+      register: external_health
+      failed_when: >
+        external_health.status != 200 or
+        (external_health.json | default({})).get("status") != "ok"
